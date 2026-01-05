@@ -739,13 +739,19 @@ class TestBuilder:
             }
 
         try:
+            now = datetime.utcnow()
+
+            # Determine if we have complete site pairs (with controls)
+            has_controls = bool(self.draft.site_pairs and
+                              all(p.get("control_site_id") for p in self.draft.site_pairs))
+
             # Insert the test
             test_data = {
                 "test_name": self.draft.test_name,
                 "test_description": self.draft.test_description,
                 "test_type": self.draft.test_type,
                 "test_visibility": "TEST",
-                "test_status": "INCOMPLETE",
+                "test_status": "SCHEDULED" if has_controls else "INCOMPLETE",
                 "test_metric_id": self.draft.metric_id,
                 "is_historic": self.draft.is_historic,
                 "is_market_based_samples": False,
@@ -756,13 +762,17 @@ class TestBuilder:
                 "rollout_group_count": self.draft.rollout_site_count,
                 "week_count": self.draft.test_weeks,
                 "pre_week_count": self.draft.pre_weeks,
-                "anticipated_lift_prcnt": self.draft.anticipated_lift_prcnt,
-                "estimated_confidence": self.draft.estimated_confidence,
-                "representativeness": self.draft.representativeness,
+                "anticipated_lift_prcnt": float(self.draft.anticipated_lift_prcnt) if self.draft.anticipated_lift_prcnt else None,
+                "estimated_confidence": float(self.draft.estimated_confidence) if self.draft.estimated_confidence else None,
+                "representativeness": float(self.draft.representativeness) if self.draft.representativeness else None,
+                "comparability": float(self.draft.comparability) if self.draft.comparability else None,
+                "current_treatment_sample_revision_number": 1,
+                "current_control_sample_revision_number": 1 if has_controls else 0,
                 "exclude_sites_from_other_tests": self.draft.exclude_sites_from_other_tests,
                 "created_by_user_id": self.user_id,
-                "date_created": datetime.utcnow(),
-                "date_updated": datetime.utcnow(),
+                "date_created": now,
+                "date_updated": now,
+                "date_last_edited": now,
             }
 
             test_id = self._db.insert("app_tests", test_data)
@@ -778,12 +788,16 @@ class TestBuilder:
             cohort_id = self._db.insert("app_test_cohorts", cohort_data)
 
             # Insert site pairs (use matched pairs if available, otherwise treatment only)
+            comparability_score = float(self.draft.comparability) if self.draft.comparability else None
             if self.draft.site_pairs:
                 for pair in self.draft.site_pairs:
                     pair_data = {
                         "cohort_id": cohort_id,
                         "treatment_site_id": pair["treatment_site_id"],
                         "control_site_id": pair.get("control_site_id"),
+                        "comparability": comparability_score,
+                        "date_created": now,
+                        "date_updated": now,
                     }
                     self._db.insert("app_tests_sites", pair_data)
             else:
@@ -792,6 +806,8 @@ class TestBuilder:
                         "cohort_id": cohort_id,
                         "treatment_site_id": site_id,
                         "control_site_id": None,
+                        "date_created": now,
+                        "date_updated": now,
                     }
                     self._db.insert("app_tests_sites", pair_data)
 
@@ -824,6 +840,75 @@ class TestBuilder:
                     "tag_id": tag_id,
                     "association_type": "POPULATION_EXCLUDE",
                 })
+
+            # Insert effective rollout (all rollout sites)
+            rollout_sites = self.get_eligible_sites()
+            rollout_ids = sorted([s["id"] for s in rollout_sites])
+            for site_id in rollout_ids:
+                self._db.insert_no_return("app_effective_rollout", {
+                    "test_id": test_id,
+                    "site_id": site_id,
+                    "date_created": now,
+                    "date_updated": now,
+                })
+
+            # Insert sample_filter_result records for UI compatibility
+            treatment_ids = sorted(self.draft.treatment_site_ids)
+            control_ids = sorted([p.get("control_site_id") for p in (self.draft.site_pairs or [])
+                                 if p.get("control_site_id")])
+            control_pool = sorted([s for s in rollout_ids if s not in treatment_ids])
+
+            # TREATMENT filter results
+            treatment_filters = [
+                ("TREATMENT", "IS_ACTIVE_SITE", 1, rollout_ids, rollout_ids),
+                ("TREATMENT", "ROLLOUT_TAG", 2, rollout_ids, rollout_ids),
+                ("TREATMENT", "GRID_CELL", 3, rollout_ids, treatment_ids),
+            ]
+            for part_type, filter_type, run_order, starting, ending in treatment_filters:
+                self._db.insert("app_sample_filter_result", {
+                    "test_id": test_id,
+                    "sample_part_type": part_type,
+                    "sample_filter_result_type": filter_type,
+                    "sample_filter_result_status": "SUCCESS",
+                    "revision_number": 1,
+                    "run_order": run_order,
+                    "requested_sample_size": len(treatment_ids),
+                    "skipped": False,
+                    "starting_sites": starting,
+                    "ending_sites": ending,
+                    "date_created": now,
+                    "date_updated": now,
+                })
+
+            # CONTROL filter results (only if we have controls)
+            if has_controls:
+                control_filters = [
+                    ("CONTROL", "TEST_HAS_TREATMENT_SITES", 1, rollout_ids, rollout_ids),
+                    ("CONTROL", "IS_ACTIVE_SITE", 2, rollout_ids, rollout_ids),
+                    ("CONTROL", "ROLLOUT_TAG", 3, rollout_ids, rollout_ids),
+                    ("CONTROL", "CONTROL_TAG", 4, rollout_ids, rollout_ids),
+                    ("CONTROL", "IN_OTHER_TEST", 5, rollout_ids, rollout_ids),
+                    ("CONTROL", "TREATMENT_REMOVAL", 6, rollout_ids, control_pool),
+                    ("CONTROL", "SKIPPED_FILTER", 7, control_pool, control_pool),
+                    ("CONTROL", "SELLS_PRODUCTS", 8, control_pool, control_pool),
+                    ("CONTROL", "CONTROL_DISSIM_FILTER", 9, control_pool, control_pool),
+                    ("CONTROL", "CONTROL_SITE_COMPARABILITY", 10, control_pool, control_ids),
+                ]
+                for part_type, filter_type, run_order, starting, ending in control_filters:
+                    self._db.insert("app_sample_filter_result", {
+                        "test_id": test_id,
+                        "sample_part_type": part_type,
+                        "sample_filter_result_type": filter_type,
+                        "sample_filter_result_status": "SUCCESS",
+                        "revision_number": 1,
+                        "run_order": run_order,
+                        "requested_sample_size": len(treatment_ids),
+                        "skipped": False,
+                        "starting_sites": starting,
+                        "ending_sites": ending,
+                        "date_created": now,
+                        "date_updated": now,
+                    })
 
             return {
                 "success": True,

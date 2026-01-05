@@ -113,7 +113,7 @@ class Site(Base):
     __tablename__ = "dim_sites"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    client_site_id: Mapped[Optional[str]] = mapped_column(String(255))
+    site_client_id: Mapped[Optional[str]] = mapped_column(String(255))
     site_name: Mapped[Optional[str]] = mapped_column(String(255))
     status: Mapped[Optional[str]] = mapped_column(String(50))
     testable: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -122,7 +122,7 @@ class Site(Base):
     market: Mapped[Optional[str]] = mapped_column(String(255))
 
     def __repr__(self):
-        return f"<Site[{self.id}] {self.client_site_id}>"
+        return f"<Site[{self.id}] {self.site_client_id}>"
 
 
 class SiteAttributes(Base):

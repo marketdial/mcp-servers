@@ -218,7 +218,7 @@ class SampleOptimizer:
             random.seed(42)
             selected_ids = random.sample(available_ids, target_count)
             sites = self._db.execute("""
-                SELECT id, client_site_id, site_name, market
+                SELECT id, site_client_id, site_name, market
                 FROM dim_sites WHERE id = ANY(:ids)
             """, {"ids": selected_ids})
 
@@ -239,7 +239,7 @@ class SampleOptimizer:
             random.seed(42)
             selected_ids = random.sample(available_ids, target_count)
             sites = self._db.execute("""
-                SELECT id, client_site_id, site_name, market
+                SELECT id, site_client_id, site_name, market
                 FROM dim_sites WHERE id = ANY(:ids)
             """, {"ids": selected_ids})
 
@@ -303,7 +303,7 @@ class SampleOptimizer:
 
         # Get site details
         sites = self._db.execute("""
-            SELECT id, client_site_id, site_name, market
+            SELECT id, site_client_id, site_name, market
             FROM dim_sites WHERE id = ANY(:ids)
         """, {"ids": selected_ids})
 
@@ -435,7 +435,7 @@ class SampleOptimizer:
             FROM app_tests_sites ts
             JOIN app_test_cohorts tc ON ts.cohort_id = tc.id
             JOIN app_tests t ON tc.test_id = t.id
-            WHERE t.test_status IN ('IN_MARKET', 'READY_TO_RUN')
+            WHERE t.test_status IN ('IN_PROGRESS', 'SCHEDULED', 'IN_IMPLEMENTATION')
             AND t.exclude_sites_from_other_tests = true
             AND t.test_visibility = 'TEST'
         """)
