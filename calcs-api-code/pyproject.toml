@@ -1,11 +1,21 @@
 [project]
 name = "calcs-api-code"
-version = "0.1.0"
-description = "Direct Python client for Calcs API - designed for code execution patterns"
+version = "0.2.0"
+description = "Direct Python client for Calcs API with AI-driven test creation - designed for code execution patterns"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.25.0",
     "python-dotenv>=1.0.0",
+    # Database dependencies for test creation
+    "psycopg2-binary>=2.9.0",
+    "sqlalchemy>=2.0.0",
+    "google-cloud-bigquery>=3.0.0",
+    # Data processing for sample optimization
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.2.0",
+    "gower>=0.1.2",
 ]
 
 [project.optional-dependencies]

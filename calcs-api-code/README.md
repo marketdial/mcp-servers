@@ -5,6 +5,8 @@ Works with Claude Code CLI, Gemini `code_execution`, and any Python environment.
 
 ## Quick Start
 
+### Query Tests
+
 ```python
 from calcs_api_code import CalcsClient
 
@@ -12,6 +14,38 @@ client = CalcsClient(client="RetailCorp")
 tests = client.get_tests()
 active = [t for t in tests if t["status"] == "active"]
 print(f"Found {len(active)} active tests")
+```
+
+### Create Tests (AI Interview)
+
+```python
+from calcs_api_code import TestInterview
+
+interview = TestInterview(client="RetailCorp")
+
+# Step 1: Basic info
+interview.set_basics(
+    name="Q1 Promo Test",
+    description="Testing 10% discount on beverages",
+    test_type="Promotion",
+    metric="SALES"
+)
+
+# Step 2: Rollout group
+interview.set_rollout(include_tags=[1, 2])
+
+# Step 3: Products
+interview.set_products(hierarchy_search="beverages")
+
+# Step 4: Sample optimization
+interview.optimize_and_accept(target_sites=30)
+
+# Step 5: Schedule
+interview.set_schedule("2025-02-03", test_weeks=12)
+
+# Step 6: Create
+result = interview.finalize()
+print(f"Created test: {result['test_id']}")
 ```
 
 ## Installation
@@ -38,6 +72,40 @@ CALCS_API_BASE_URL=https://staging-app.marketdial.dev/calcs
 
 # Optional: Default client for multi-tenant access
 CALCS_DEFAULT_CLIENT=your_client_name
+
+# Required for test creation (TestBuilder/TestInterview):
+# Option 1: Use secrets/configs/staging.config.json (preferred)
+# The library will auto-detect this file and use client-specific credentials
+
+# Option 2: Use environment variables (fallback)
+POSTGRES_HOST=your_postgres_host
+POSTGRES_PORT=5432
+POSTGRES_USER=your_user
+POSTGRES_PASSWORD=your_password
+POSTGRES_DATABASE=your_database
+
+# Required for sample optimization metrics:
+GCP_PROJECT=your_gcp_project
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
+```
+
+### Config File Auto-Detection
+
+When using `TestBuilder` or `TestInterview` with a client name, the library automatically looks for credentials in:
+
+1. `../secrets/configs/staging.config.json` (relative to package)
+2. `/Users/jeff/Code/mcp-servers/secrets/configs/staging.config.json`
+
+```python
+from calcs_api_code.db import list_available_clients
+
+# See which clients are configured
+clients = list_available_clients()
+print(clients)  # ['maverik', 'dicks', 'potbelly', ...]
+
+# TestInterview automatically uses the right database for each client
+from calcs_api_code import TestInterview
+interview = TestInterview(client="maverik")  # Uses maverik's database
 ```
 
 ## Available Methods
@@ -65,6 +133,41 @@ CALCS_DEFAULT_CLIENT=your_client_name
 |--------|-------------|
 | `list_analyses(client?)` | List all rollout analyses |
 | `get_analysis(analysis_id, client?)` | Get a specific analysis |
+
+### Test Creation (TestInterview)
+
+High-level API for AI-driven test creation:
+
+| Method | Description |
+|--------|-------------|
+| `set_basics(name, description, test_type, metric)` | Set basic test information |
+| `set_rollout(include_tags?, exclude_tags?, full_fleet?)` | Define rollout group |
+| `set_products(hierarchy_ids?, hierarchy_search?)` | Select products/categories |
+| `optimize_sample(target_sites)` | Run sample optimization |
+| `accept_sample()` | Accept the optimized sample |
+| `optimize_and_accept(target_sites)` | Optimize and accept in one step |
+| `set_schedule(start_date, test_weeks?, pre_weeks?, expected_lift?)` | Set schedule and estimate confidence |
+| `get_summary()` | Get complete test configuration summary |
+| `validate()` | Check if test is ready to create |
+| `finalize()` | Create the test in the database |
+
+### Test Creation (TestBuilder - Low Level)
+
+Step-by-step builder for full control:
+
+| Method | Description |
+|--------|-------------|
+| `set_name(name)` | Set test name (validates uniqueness) |
+| `set_description(description)` | Set test description |
+| `set_test_type(test_type)` | Set test category |
+| `set_metric(metric)` | Set primary metric |
+| `get_available_tags(search?)` | List available site tags |
+| `set_rollout_tags(include?, exclude?)` | Set rollout by tags |
+| `search_hierarchies(search, level?)` | Search product hierarchies |
+| `set_hierarchies(hierarchy_ids)` | Set product selection |
+| `get_eligible_sites()` | Get sites available for treatment |
+| `estimate_confidence(expected_lift)` | Estimate detection power |
+| `create()` | Create the test |
 
 ## Usage Examples
 
@@ -98,6 +201,60 @@ client = CalcsClient(client="RetailCorp")
 # Get overall results for a test
 results = client.get_test_results(test_id=123, filter_type="OVERALL")
 print(f"Test 123 lift: {results.get('lift', 'N/A')}")
+```
+
+### AI-Driven Test Creation
+
+```python
+from calcs_api_code import TestInterview, get_system_prompt
+
+# Get the AI system prompt for test creation interviews
+system_prompt = get_system_prompt()
+
+# Create interview instance
+interview = TestInterview(client="RetailCorp")
+
+# Check progress at any time
+progress = interview.progress
+print(f"Current step: {progress['current']}")
+print(f"Completed: {progress['completed']}")
+
+# Step through the interview flow
+interview.set_basics(
+    name="Summer Sale Test",
+    description="Testing 15% discount impact on beverage sales",
+    test_type="Promotion",
+    metric="SALES"
+)
+
+# Get available tags for rollout selection
+tags = interview.get_tags(search="urban")
+print(f"Found tags: {[t['name'] for t in tags]}")
+
+# Set rollout (full fleet or by tags)
+interview.set_rollout(full_fleet=True)
+print(f"Rollout sites: {interview.get_rollout_count()}")
+
+# Search and select products
+products = interview.search_products("beverage")
+interview.set_products(hierarchy_search="beverage")
+
+# Optimize sample for representativeness
+result = interview.optimize_sample(target_sites=30)
+print(f"Representativeness: {result['representativeness']}%")
+interview.accept_sample()
+
+# Set schedule and get confidence
+schedule = interview.set_schedule("2025-03-03", test_weeks=12, expected_lift=5.0)
+print(f"Confidence: {schedule['confidence']}%")
+
+# Review and finalize
+summary = interview.get_summary()
+validation = interview.validate()
+
+if validation["valid"]:
+    result = interview.finalize()
+    print(f"Created test: {result['test_id']}")
 ```
 
 ### Progressive Discovery
