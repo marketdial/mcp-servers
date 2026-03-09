@@ -1,7 +1,7 @@
 [project]
 name = "calcs-api"
-version = "1.0.0"
-description = "MCP server for Calcs API - retail analytics calculations"
+version = "2.0.0"
+description = "MCP server for Calcs API - retail analytics with compact summaries, batch tools, and OAuth"
 requires-python = ">=3.13"
 dependencies = [
     "mcp>=1.0.0",
@@ -10,11 +10,12 @@ dependencies = [
     "pydantic>=2.0.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "fastmcp>=2.10.0",
+    "fastmcp>=2.13.0",
 ]
 
 [project.scripts]
 calcs-api = "calcs_api.server:run"
+calcs-api-stdio = "calcs_api.server:run_stdio"
 calcs-api-http = "calcs_api.server:run_http"
 calcs-api-sse = "calcs_api.server:run_sse"
 

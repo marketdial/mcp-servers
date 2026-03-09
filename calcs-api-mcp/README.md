@@ -1,197 +1,149 @@
-# Calcs API MCP Server
+# Calcs API MCP Server (Python / FastMCP)
 
-A comprehensive Model Context Protocol (MCP) server that provides **Claude Code**, **Cursor**, and **LM Studio** with access to the Calcs API for retail analytics calculations and test management. Built with FastMCP, this server supports both **HTTP** and **SSE** transports for maximum compatibility across different MCP clients.
+A Python MCP server that gives **Claude Code**, **Cursor**, **LM Studio**, and other MCP clients access to the Calcs API for retail analytics, A/B test management, and rollout analysis. Built with [FastMCP](https://github.com/jlowin/fastmcp).
 
-## Features
+> **Note:** This is the Python rewrite of the original TypeScript `calcs-api/` server. It adds HTTP + SSE multi-transport support, smart response summarization, Google OAuth for remote clients, and convenience tools for common workflows.
 
-This MCP server provides comprehensive access to the Calcs API endpoints, including:
+---
 
-### Test Management (6 tools)
-- `health_check` - Check API connectivity and health status
-- `get_tests` - Get all tests for a client
-- `get_test_status` - Get detailed status and information for a specific test
-- `get_active_clients` - Get list of all active clients
-- `get_site_tests` - Get all tests where a site has treatment or control role
-- `describe_transactions` - Get descriptive overview of the fact_transactions table
-
-### Results & Analytics (8 tools)
-- `get_test_results` - Get test results with advanced filtering (OVERALL, CUSTOMER_COHORT, CUSTOMER_SEGMENT, SITE_COHORT, SITE_PAIR, FINISHED_COHORT, SITE_TAG)
-- `get_lift_explorer_results` - Get lift explorer results (JSON equivalent of .avro file contents)
-- `get_lift_explorer_ids` - Get list of valid lift explorer IDs for client
-- `get_site_pair_lift_manifest` - Get site pair lift manifest data
-- `get_prediction_table` - Get prediction table data
-- `get_customer_cross` - Get customer cross data
-- `download_all_test_data` - Download comprehensive chart data for a test
-- `get_clients_jobs_summary` - Get job information for all active clients
-
-### Analysis Management (7 tools)
-- `list_analyses` - List all analyses for the current client
-- `create_analysis` - Create a new rollout analysis
-- `get_analysis` - Get a specific analysis by ID
-- `update_analysis` - Update an existing analysis
-- `delete_analysis` - Delete an analysis
-- `run_analysis` - Run rollout analysis synchronously
-- `start_analysis` - Start analysis asynchronously with progress tracking
-- `get_analysis_results` - Get results of a completed analysis
-
-### Job & System Monitoring (4 tools)
-- `get_jobs_summary` - Get count of running jobs and compute hours for date range
-- `get_oldest_job_date` - Get the date of the oldest job for client
-- `get_newest_job_date` - Get the date of the newest job for client
-
-**Total: 30+ comprehensive tools** covering the complete Calcs API surface area for retail analytics, A/B testing, and rollout analysis.
-
-## Multi-Transport Support
-
-This server supports multiple transport protocols for maximum client compatibility:
-
-### HTTP Transport (Default)
-- **Port**: 8002
-- **Endpoint**: `http://localhost:8002/mcp/`
-- **Compatible with**: LM Studio, Claude Code (HTTP mode), modern HTTP-based MCP clients
-- **Protocol**: JSON-RPC over HTTP POST
-- **Use case**: Recommended for new integrations and LM Studio
-
-### SSE Transport (Legacy)
-- **Port**: 8001  
-- **Endpoint**: `http://localhost:8001/sse/`
-- **Compatible with**: Claude Code (SSE mode), Cursor, legacy SSE-based MCP clients
-- **Protocol**: Server-Sent Events with JSON-RPC
-- **Use case**: Backward compatibility with existing configurations
-
-## Smart Response Management
-
-This MCP server includes intelligent response size management to prevent context overflow when working with large datasets:
-
-### Safe-by-Default Design
-- **Automatic size detection**: Responses are checked against a 40,000 token limit
-- **Smart error handling**: Large responses return helpful error messages with filtering suggestions
-- **Seamless small responses**: Data under the limit passes through unchanged
-
-### Keyword Filtering System
-For endpoints that may return large datasets, filtered variants are available:
-- `get_tests_filtered` - Filter test data by field keywords
-- `get_test_results_filtered` - Filter comprehensive test results
-- `download_all_test_data_filtered` - Filter complete test data packages  
-- `get_lift_explorer_results_filtered` - Filter large analytics datasets
-- `list_analyses_filtered` - Filter analysis lists
-
-### Example Usage
-```
-User: "What's the average lift percent across all tests for RetailCorp?"
-
-1. Claude calls get_tests(client="RetailCorp")
-2. If response too large → Error: "Use get_tests_filtered with keywords: ['lift_percent']"
-3. Claude calls get_tests_filtered(client="RetailCorp", keywords=["lift_percent"])
-4. Receives manageable filtered data with only lift percentage fields
-5. Computes average from filtered results
-```
-
-This approach enables complex analytical queries across arbitrarily large datasets while maintaining optimal performance and context efficiency.
-
-## Prerequisites
-
-- Python 3.10 or higher
-- UV package manager
-- A valid Calcs API bearer token
-- Access to the Calcs API (default: `https://staging-app.marketdial.dev/calcs`)
-- Claude Code CLI or Cursor IDE (for MCP integration)
-
-## Installation
-
-1. Navigate to the calcs-api-mcp directory:
-   ```bash
-   cd calcs-api-mcp
-   ```
-
-2. Install dependencies using UV:
-   ```bash
-   uv sync
-   ```
-
-## Configuration
-
-The server requires the following environment variables:
-
-### Required
-- `CALCS_API_TOKEN`: Your bearer token for the Calcs API
-
-### Optional
-- `CALCS_API_BASE_URL`: Base URL for the Calcs API (default: `https://staging-app.marketdial.dev/calcs`)
-- `CALCS_DEFAULT_CLIENT`: Default client identifier to use when not specified in tool calls
-
-### Environment Variables Setup
-
-Create a `.env` file in the calcs-api-mcp directory:
-
-```env
-CALCS_API_TOKEN=your_bearer_token_here
-CALCS_DEFAULT_CLIENT=your_client_name
-CALCS_API_BASE_URL=https://staging-app.marketdial.dev/calcs
-```
-
-## Usage
-
-### Starting the Server
-
-Choose your preferred transport:
+## Quick Start
 
 ```bash
-# HTTP Transport (default, recommended for LM Studio)
-uv run python calcs_api/server.py
+cd calcs-api-mcp
 
-# Or using console commands:
-uv run calcs-api        # HTTP transport (default)
-uv run calcs-api-http   # HTTP transport (explicit)
-uv run calcs-api-sse    # SSE transport (legacy)
+# 1. Install dependencies
+uv sync
+
+# 2. Configure authentication (see Authentication below)
+cp .env.example .env
+# Edit .env with your token and client
+
+# 3. Start the server
+uv run calcs-api          # stdio transport (default, for Claude Desktop/Code)
+uv run calcs-api-http     # HTTP transport on port 8002 (for LM Studio, remote)
+uv run calcs-api-sse      # SSE transport on port 8001 (legacy)
 ```
+
+---
+
+## Authentication
+
+The server uses **two separate layers** of authentication:
+
+### Layer 1: Calcs API Token (Required)
+
+Every transport mode needs a bearer token to authenticate with the upstream Calcs API. This token is passed as an `Authorization: Bearer <token>` header on all API requests.
+
+```env
+# .env
+CALCS_API_TOKEN=your_bearer_token_here
+```
+
+**How to get a token:** Obtain a Calcs API bearer token from your MarketDial / Calcs API administrator. This is a service-level credential — it authenticates the MCP server itself to the Calcs API backend.
+
+### Layer 2: Client Authentication (Transport-Dependent)
+
+How *users* authenticate to the MCP server depends on which transport you use:
+
+| Transport | Auth Method | Use Case |
+|-----------|-------------|----------|
+| **stdio** | None needed — inherits caller's environment | Claude Code (local) |
+| **HTTP** | Google OAuth (optional) | LM Studio, remote clients |
+| **SSE** | Google OAuth (optional) | Cursor, legacy clients |
+
+#### stdio (Claude Code local)
+
+No additional auth is needed. The MCP server runs as a subprocess of Claude Code, inheriting the environment variables (including `CALCS_API_TOKEN`) directly. This is the simplest and most secure mode.
+
+#### HTTP / SSE with Google OAuth (Optional)
+
+For remote/shared deployments, you can enable Google OAuth so users authenticate with their Google accounts before accessing the MCP server.
+
+```env
+# .env (add these to enable OAuth)
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+MCP_BASE_URL=http://localhost:8002   # Public URL for OAuth redirects
+```
+
+If `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are not set, OAuth is disabled and the server runs without user-level authentication (fine for local use).
+
+**Setting up Google OAuth credentials:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create an OAuth 2.0 Client ID (Web application)
+3. Add authorized redirect URI: `{MCP_BASE_URL}/oauth/callback`
+4. Copy the Client ID and Client Secret to your `.env`
+
+### Multi-Tenant Client Header
+
+The Calcs API is multi-tenant — every request needs a `client` header identifying which retail client's data to access.
+
+```env
+# .env
+CALCS_DEFAULT_CLIENT=your_client_name    # Used when tools don't specify a client
+```
+
+You can also override per-request by passing `client="other_client"` to any tool. Use the `get_active_clients` tool to discover valid client names.
+
+---
+
+## Environment Variables Summary
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `CALCS_API_TOKEN` | **Yes** | — | Bearer token for the Calcs API |
+| `CALCS_DEFAULT_CLIENT` | Recommended | `""` | Default client identifier |
+| `CALCS_API_BASE_URL` | No | `https://staging-app.marketdial.dev/calcs` | Calcs API base URL |
+| `GOOGLE_CLIENT_ID` | No | — | Google OAuth client ID (HTTP/SSE only) |
+| `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth client secret (HTTP/SSE only) |
+| `MCP_BASE_URL` | No | `http://localhost:8002` | Public base URL for OAuth redirects |
+
+---
 
 ## Client Configuration
 
-### LM Studio
-
-1. Start the server with HTTP transport:
-   ```bash
-   uv run calcs-api
-   ```
-
-2. Add to your LM Studio MCP configuration:
-   ```json
-   {
-     "mcpServers": {
-       "calcs-api-server": {
-         "url": "http://127.0.0.1:8002/mcp/"
-       }
-     }
-   }
-   ```
-
 ### Claude Code
 
-**HTTP Transport (Recommended):**
-```bash
-# Add the server to Claude Code
-claude mcp add calcs-api-http http://localhost:8002/mcp/
+**Option A: HTTP transport (recommended for remote server)**
 
-# Start Claude Code with MCP servers
-claude
+Start the server, then register it:
+
+```bash
+# Start the server (in a separate terminal)
+uv run calcs-api
+
+# Register with Claude Code
+claude mcp add calcs-api-http http://localhost:8002/mcp/
 ```
 
-**SSE Transport (Legacy):**
-```bash
-# Add the server to Claude Code (legacy mode)
-claude mcp add --transport sse calcs-api-sse http://localhost:8001/sse
+**Option B: Direct command (recommended for local use)**
 
-# Start Claude Code with MCP servers
-claude
+No separate server process needed — Claude Code launches it as a subprocess:
+
+```bash
+claude mcp add calcs-api \
+  --transport command \
+  -- uv run --directory /path/to/calcs-api-mcp calcs-api
+```
+
+Or add to your Claude Code settings JSON (`~/.claude/settings.json` or project `.claude/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "calcs-api": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/calcs-api-mcp", "calcs-api"],
+      "env": {
+        "CALCS_API_TOKEN": "your_token_here",
+        "CALCS_DEFAULT_CLIENT": "your_client"
+      }
+    }
+  }
+}
 ```
 
 ### Cursor IDE
-
-**HTTP Transport (Recommended):**
-1. Open Cursor settings (Cmd/Ctrl + ,)
-2. Search for "MCP" settings  
-3. Add the following configuration:
 
 ```json
 {
@@ -205,322 +157,179 @@ claude
 }
 ```
 
-**SSE Transport (Legacy):**
+### LM Studio
+
 ```json
 {
-  "mcp": {
-    "servers": {
-      "calcs-api": {
-        "transport": {
-          "type": "sse",
-          "url": "http://localhost:8001/sse"
-        }
-      }
+  "mcpServers": {
+    "calcs-api-server": {
+      "url": "http://127.0.0.1:8002/mcp/"
     }
   }
 }
 ```
 
-### Using the Tools
+---
 
-Once connected, you can use the Calcs API tools with natural language:
-- "Get all tests for client RetailCorp"
-- "Show me the test status for test ID 123"
-- "Create a new rollout analysis for product launch"
-- "Get lift explorer results for ID abc-123"
-- "Download all test data for test 456"
-- "Filter test results by keywords: lift_percent, status"
+## Transports
 
-### Command-Line Configuration
+| Transport | Port | Endpoint | Start Command |
+|-----------|------|----------|---------------|
+| stdio (Default) | — | stdin/stdout | `uv run calcs-api` or `uv run calcs-api-stdio` |
+| HTTP (Streamable) | 8002 | `/mcp/` | `uv run calcs-api-http` |
+| SSE (Legacy) | 8001 | `/sse/` | `uv run calcs-api-sse` |
 
-The recommended approach is using Claude Code's command-line MCP configuration for easy server management and switching between transport modes.
+---
 
-## Available Tools
+## Tools (30)
 
-### Test Management Tools
+### Test Management (7 tools)
 
-#### `health_check`
-Check API connectivity and health status.
-- **Parameters**: None
-- **Returns**: API health status and connectivity information
+| Tool | Description |
+|------|-------------|
+| `health_check` | Check API connectivity |
+| `get_tests` | Get tests with sorting, filtering, and compaction |
+| `get_recent_tests` | Get the N most recently completed tests |
+| `get_test_status` | Get calculation status for a specific test |
+| `get_active_clients` | List all active client identifiers |
+| `get_site_tests` | Get tests involving a specific site |
+| `describe_transactions` | Get fact_transactions table schema |
 
-#### `get_tests`
-Get all tests for a client.
-- **Parameters**: `client` (optional)
-- **Returns**: List of all tests with metadata
+### Results & Analytics (8 tools)
 
-#### `get_test_status`
-Get detailed status and information for a specific test.
-- **Parameters**: `test_id` (required), `client` (optional)
-- **Returns**: Comprehensive test status including configuration and progress
+| Tool | Description |
+|------|-------------|
+| `get_test_summary` | Compact summary: final lift, confidence, significance, verdict |
+| `get_test_results` | Detailed results with filter_type (OVERALL, CUSTOMER_COHORT, SITE_PAIR, etc.) |
+| `get_lift_explorer_results` | Lift explorer data (JSON equivalent of .avro) |
+| `get_lift_explorer_ids` | List valid lift explorer IDs |
+| `get_site_pair_lift_manifest` | Per-site-pair lift breakdown |
+| `get_prediction_table` | Prediction model results |
+| `get_customer_cross` | Customer cross-tabulation data |
+| `download_all_test_data` | Comprehensive chart data for a test |
 
-#### `get_active_clients`
-Get list of all active clients.
-- **Parameters**: `client` (optional)
-- **Returns**: List of active client identifiers
+### Rollout Analysis (10 tools)
 
-#### `get_site_tests`
-Get all tests where a site has treatment or control role.
-- **Parameters**: `client_site_id` (required), `client` (optional)
-- **Returns**: List of tests involving the specified site
+| Tool | Description |
+|------|-------------|
+| `list_analyses` | List analyses with optional result status check |
+| `get_analysis` | Get analysis configuration by ID |
+| `get_analysis_results` | Get results of a completed analysis |
+| `get_analysis_with_results` | Config + results in one call |
+| `get_recent_analysis_results` | Results for N most recent analyses |
+| `create_analysis` | Create a new rollout analysis |
+| `update_analysis` | Update analysis configuration |
+| `delete_analysis` | Delete an analysis |
+| `run_analysis` | Run analysis synchronously (waits for completion) |
+| `start_analysis` | Start analysis asynchronously |
 
-#### `describe_transactions`
-Get descriptive overview of the fact_transactions table.
-- **Parameters**: `client` (optional)
-- **Returns**: Schema and metadata about transaction data structure
+### Jobs & Monitoring (4 tools)
 
-### Results & Analytics Tools
+| Tool | Description |
+|------|-------------|
+| `get_jobs_summary` | Running jobs and compute hours for a date range |
+| `get_oldest_job_date` | Earliest job date for the client |
+| `get_newest_job_date` | Most recent job date for the client |
+| `get_clients_jobs_summary` | Job summary across all active clients |
 
-#### `get_test_results`
-Get test results with advanced filtering options.
-- **Parameters**: `test_id` (required), `filter_type` (required: OVERALL, CUSTOMER_COHORT, CUSTOMER_SEGMENT, SITE_COHORT, SITE_PAIR, FINISHED_COHORT, SITE_TAG), `filter_value` (optional), `client` (optional)
-- **Returns**: Filtered test results and analytics
+### Discovery (1 tool)
 
-#### `get_lift_explorer_results`
-Get lift explorer results (JSON equivalent of .avro file contents).
-- **Parameters**: `lift_explorer_id` (required), `client` (optional)
-- **Returns**: Detailed lift analysis data in JSON format
+| Tool | Description |
+|------|-------------|
+| `search_tools` | Search available tools by keyword |
 
-#### `get_lift_explorer_ids`
-Get list of valid lift explorer IDs for client.
-- **Parameters**: `client` (optional)
-- **Returns**: Available lift explorer identifiers
+---
 
-#### `get_site_pair_lift_manifest`
-Get site pair lift manifest data.
-- **Parameters**: `test_id` (required), `client` (optional)
-- **Returns**: Site pairing and lift calculation metadata
+## Resources & Prompts
 
-#### `get_prediction_table`
-Get prediction table data.
-- **Parameters**: `test_id` (required), `client` (optional)
-- **Returns**: Prediction model results and forecasts
+The server also exposes MCP **resources** (read-only context) and **prompts** (workflow templates):
 
-#### `get_customer_cross`
-Get customer cross data.
-- **Parameters**: `test_id` (required), `client` (optional)
-- **Returns**: Customer cross-correlation analysis
+**Resources:**
+- `calcs://glossary` — Data format conventions, field meanings (basis points, significance thresholds, etc.)
+- `calcs://workflow-guide` — Recommended tool sequences for common analytics tasks
 
-#### `download_all_test_data`
-Download comprehensive chart data for a test.
-- **Parameters**: `test_id` (required), `client` (optional)
-- **Returns**: Complete test data package for visualization and analysis
+**Prompts:**
+- `analyze_test(test_id)` — Step-by-step test analysis workflow
+- `compare_recent_tests(count)` — Compare N recent completed tests
+- `rollout_review(count)` — Review N recent rollout analyses
 
-### Analysis Management Tools
+---
 
-#### `list_analyses`
-List all analyses for the current client.
-- **Parameters**: `client` (optional)
-- **Returns**: List of rollout analyses with metadata
+## Smart Response Management
 
-#### `create_analysis`
-Create a new rollout analysis.
-- **Parameters**: `analysis_data` (required object), `client` (optional)
-- **Returns**: Created analysis details
+The server includes built-in response summarization to prevent context window overflow:
 
-#### `get_analysis`
-Get a specific analysis by ID.
-- **Parameters**: `analysis_id` (required), `client` (optional)
-- **Returns**: Detailed analysis configuration and status
+- **Test list compaction**: `get_tests` and `get_recent_tests` return only essential fields (id, name, status, dates) instead of raw API responses
+- **Summary tools**: `get_test_summary` extracts final lift/confidence/verdict from time-series data
+- **Keyword filtering**: Tools like `get_test_results` and `download_all_test_data` accept `filter_keywords` to extract only relevant fields
+- **Response size guard**: Middleware warns (to stderr) when responses exceed 100K chars
 
-#### `update_analysis`
-Update an existing analysis.
-- **Parameters**: `analysis_id` (required), `analysis_data` (required object), `client` (optional)
-- **Returns**: Updated analysis details
-
-#### `delete_analysis`
-Delete an analysis.
-- **Parameters**: `analysis_id` (required), `client` (optional)
-- **Returns**: Deletion confirmation
-
-#### `run_analysis`
-Run rollout analysis synchronously.
-- **Parameters**: `analysis_id` (required), `force_refresh` (optional), `client` (optional)
-- **Returns**: Complete analysis results
-
-#### `start_analysis`
-Start analysis asynchronously with progress tracking.
-- **Parameters**: `analysis_id` (required), `force_refresh` (optional), `client` (optional)
-- **Returns**: Analysis job information with progress tracking details
-
-#### `get_analysis_results`
-Get results of a completed analysis.
-- **Parameters**: `analysis_id` (required), `client` (optional)
-- **Returns**: Final analysis results and recommendations
-
-### Job & System Monitoring Tools
-
-#### `get_jobs_summary`
-Get count of running jobs and compute hours for date range.
-- **Parameters**: `start_date` (required, YYYY-MM-DD), `end_date` (required, YYYY-MM-DD), `client` (optional)
-- **Returns**: Job statistics and resource usage
-
-#### `get_clients_jobs_summary`
-Get job information for all active clients.
-- **Parameters**: `start_date` (required, YYYY-MM-DD), `end_date` (required, YYYY-MM-DD), `client` (optional)
-- **Returns**: Cross-client job summary and resource allocation
-
-#### `get_oldest_job_date`
-Get the date of the oldest job for client.
-- **Parameters**: `client` (optional)
-- **Returns**: Historical job data boundaries
-
-#### `get_newest_job_date`
-Get the date of the newest job for client.
-- **Parameters**: `client` (optional)
-- **Returns**: Most recent job activity timestamp
-
-## Multi-Tenant Support
-
-The Calcs API supports multi-tenancy through the `client` header. You can:
-
-1. Set a default client using the `CALCS_DEFAULT_CLIENT` environment variable
-2. Override the client for specific tool calls by providing the `client` parameter
-3. Some administrative tools may require specific client permissions
-
-This allows the same MCP server instance to work with multiple retail clients by specifying the appropriate client parameter in tool calls.
-
-## Error Handling
-
-The server provides comprehensive error handling:
-
-- **Authentication errors**: Invalid or missing bearer tokens
-- **Validation errors**: Invalid parameters or missing required fields  
-- **API errors**: HTTP errors from the Calcs API with detailed messages
-- **Network errors**: Connection failures or timeouts
-- **Client errors**: Missing or invalid client headers
-
-All errors are returned in a structured format with descriptive messages and HTTP status codes for debugging.
-
-## Development
-
-### Install dependencies:
-
-```bash
-uv sync
-```
-
-### Run directly with Python:
-
-```bash
-# Run the server module directly (HTTP mode)
-uv run python -m calcs_api.server
-
-# Run the server file directly
-uv run python calcs_api/server.py
-```
-
-### Testing the Server
-
-Once running, you can test the server endpoints:
-
-```bash
-# Check if server is responding (should see SSE connection attempt)
-curl http://localhost:8001/messages
-
-# The server provides MCP protocol communication over SSE
-```
-
-## Configuration
-
-The server supports multiple transport configurations:
-
-### HTTP Transport (Default)
-- **Host**: localhost
-- **Port**: 8002
-- **Endpoint**: `/mcp/`
-- **Protocol**: JSON-RPC over HTTP POST
-
-### SSE Transport (Legacy)
-- **Host**: localhost  
-- **Port**: 8001
-- **Endpoint**: `/sse/`
-- **Protocol**: Server-Sent Events with JSON-RPC
-
-Environment variables must be configured for API access.
+---
 
 ## Project Structure
 
 ```
 calcs-api-mcp/
-├── README.md                    # This file
-├── pyproject.toml              # UV project configuration  
-├── lm-studio-config.json       # LM Studio configuration example
-├── cursor-config.json          # Cursor IDE configuration example
+├── README.md
+├── pyproject.toml
+├── .env.example
+├── claude-code-config.json
+├── cursor-config.json
+├── lm-studio-config.json
 └── calcs_api/
     ├── __init__.py
-    └── server.py               # Unified FastMCP server (HTTP + SSE)
+    ├── server.py          # FastMCP server setup, lifespan, transport entry points
+    ├── client.py          # Async HTTP client (httpx) for all Calcs API endpoints
+    ├── auth.py            # Google OAuth provider (optional, HTTP/SSE only)
+    ├── middleware.py       # Timing + response size guard middleware
+    ├── summarizers.py     # Response compaction and keyword filtering
+    ├── resources.py       # MCP resources (glossary, workflow guide)
+    ├── prompts.py         # MCP prompt templates
+    └── tools/
+        ├── __init__.py    # Tool registration coordinator
+        ├── tests.py       # Test management tools
+        ├── results.py     # Results & analytics tools
+        ├── analysis.py    # Rollout analysis tools
+        ├── jobs.py        # Job monitoring tools
+        └── discovery.py   # Tool search/discovery
 ```
+
+---
 
 ## Troubleshooting
 
 ### Server won't start
-- Check if ports are in use: `lsof -i :8002` (HTTP) or `lsof -i :8001` (SSE)
-- Verify UV installation: `uv --version`
-- Check Python version: `python --version` (should be 3.13+)
-- Ensure environment variables are set in `.env` file
 
-### Client Connection Issues
+```bash
+# Check Python version (needs 3.13+)
+python --version
 
-**HTTP Transport (LM Studio, Modern Clients):**
-- Verify server is running: check for "Uvicorn running on http://localhost:8002"
-- Test endpoint: Server should show "Transport: Streamable-HTTP" on startup
-- URL format: `http://localhost:8002/mcp/`
+# Check if ports are in use
+lsof -i :8002   # HTTP
+lsof -i :8001   # SSE
 
-**SSE Transport (Legacy Clients):**
-- Verify server is running: `uv run python calcs_api/server.py --sse`
-- Test endpoint: Server should show "Transport: SSE" on startup  
-- URL format: `http://localhost:8001/sse`
+# Verify UV is installed
+uv --version
 
-**Claude Code:**
-- Check MCP server list: `claude mcp list`
-- Remove and re-add server if needed: 
-  ```bash
-  claude mcp remove calcs-api
-  claude mcp add calcs-api http://localhost:8002/mcp/
-  ```
+# Check .env file exists and has CALCS_API_TOKEN
+cat .env
+```
 
-### API Connection Issues
+### "CALCS_API_TOKEN environment variable is required"
+Set the token in your `.env` file or export it: `export CALCS_API_TOKEN=your_token`
 
-1. **"Missing required environment variable: CALCS_API_TOKEN"**
-   - Ensure your bearer token is set in the `.env` file
+### "Client header required" / 422 errors
+Set `CALCS_DEFAULT_CLIENT` in `.env` or pass `client="name"` to each tool call. Use `get_active_clients` to see valid values.
 
-2. **"API health check failed"**
-   - Check your internet connection
-   - Verify the API base URL is correct
-   - Confirm your bearer token is valid
+### Claude Code can't connect
+```bash
+# Check registered servers
+claude mcp list
 
-3. **"Client header required" or 422 errors**
-   - Set the `CALCS_DEFAULT_CLIENT` environment variable or provide the `client` parameter in tool calls
-   - Ensure client name matches exactly what the API expects
+# Re-add if needed
+claude mcp remove calcs-api
+claude mcp add calcs-api http://localhost:8002/mcp/
+```
 
-4. **Tool validation errors**
-   - Check that all required parameters are provided
-   - Ensure parameter types match the expected format (e.g., numbers vs strings)
-   - Verify date formats are YYYY-MM-DD for date parameters
-
-### Common Issues
-- **Port conflicts**: Change port in `server.py` if 8001 is in use
-- **UV not found**: Install UV following instructions at https://docs.astral.sh/uv/
-- **Python version**: Ensure Python 3.10+ is available
-- **Environment variables**: Ensure `.env` file exists in calcs-api-mcp directory
-- **Missing tools**: Restart server after any code changes to pick up new tool definitions
-
-### Debug Mode
-
-Check server logs in the terminal where you started the server for detailed error information including:
-- HTTP request/response details
-- API authentication status
-- Tool execution traces
-- Error stack traces
-
-## License
-
-MIT License - see LICENSE file for details.
-
-## Support
-
-For issues related to:
-- **This MCP server**: Open an issue in this repository
-- **The Calcs API**: Contact your Calcs API provider
-- **Claude Code integration**: Refer to Claude Code documentation
+### Debug logging
+All logs go to stderr. Run the server in a terminal and watch for request timing, API errors, and response size warnings.
