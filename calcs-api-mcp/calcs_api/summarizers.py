@@ -166,7 +166,7 @@ def summarize_tests_list(
     # Filter by status
     if status_filter:
         normalized = status_filter.upper()
-        tests = [t for t in tests if t.get("calcs_status", "").upper() == normalized]
+        tests = [t for t in tests if (t.get("calcs_status") or "").upper() == normalized]
 
     # Sort (descending for dates, ascending for names)
     reverse = sort_by != "test_name"
