@@ -23,6 +23,9 @@ def get_auth_provider(base_url: str = "http://localhost:8002"):
 
     Optional env vars:
         MCP_BASE_URL: Public base URL of the MCP server (default: http://localhost:8002)
+        MCP_ALLOWED_EMAILS: Comma-separated list of allowed email addresses.
+            If not set, any Google account can authenticate.
+            Example: "alice@company.com,bob@company.com"
 
     Args:
         base_url: The public base URL of the MCP server (used for OAuth redirects).
@@ -49,8 +52,19 @@ def get_auth_provider(base_url: str = "http://localhost:8002"):
             client_id=client_id,
             client_secret=client_secret,
             base_url=public_base,
+            required_scopes=[
+                "openid",
+                "https://www.googleapis.com/auth/userinfo.email",
+            ],
         )
         logger.info(f"Google OAuth configured — base_url={public_base}")
+
+        allowed = os.getenv("MCP_ALLOWED_EMAILS")
+        if allowed:
+            logger.info(f"Allowed emails: {allowed}")
+        else:
+            logger.info("No email allowlist — any Google account can authenticate")
+
         return provider
     except Exception as e:
         logger.warning(f"Failed to create GoogleProvider: {e}")

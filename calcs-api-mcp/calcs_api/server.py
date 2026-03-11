@@ -58,39 +58,77 @@ async def app_lifespan(server):
         logger.info("API client closed")
 
 
-# ── FastMCP server setup ──────────────────────────────────────────────
+# ── Server factory ───────────────────────────────────────────────────
 
-mcp = FastMCP("calcs-api", lifespan=app_lifespan)
+def _create_server(auth=None):
+    """Create and configure a FastMCP server instance.
 
-# Register middleware (caching, rate limiting, etc.)
-configure_middleware(mcp)
+    Args:
+        auth: Optional auth provider (e.g. GoogleProvider for HTTP/SSE).
+    """
+    server = FastMCP("calcs-api", lifespan=app_lifespan, auth=auth)
+    configure_middleware(server)
+    register_resources(server)
+    register_prompts(server)
+    register_all_tools(server)
+    return server
 
-# Register resources (glossary, workflow guide)
-register_resources(mcp)
 
-# Register prompts (analyze_test, compare_tests, etc.)
-register_prompts(mcp)
-
-# Register all tools from tool modules
-register_all_tools(mcp)
+# Default server (no auth) — used by stdio and as fallback for HTTP/SSE
+mcp = _create_server()
 
 
 # ── Transport entry points ────────────────────────────────────────────
 
 def run_http():
-    """HTTP transport (default) — for LM Studio and remote clients."""
-    logger.info("Starting Calcs API MCP Server (HTTP Transport)...")
-    mcp.run(transport="streamable-http", host="localhost", port=8002)
+    """HTTP transport — for LM Studio and remote clients.
+
+    If GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set, Google OAuth
+    is enabled and users must authenticate before accessing tools.
+    """
+    from .auth import get_auth_provider
+
+    port = int(os.getenv("MCP_HTTP_PORT", "8002"))
+    base_url = os.getenv("MCP_BASE_URL", f"http://localhost:{port}")
+    auth = get_auth_provider(base_url=base_url)
+
+    if auth:
+        server = _create_server(auth=auth)
+        logger.info(f"Starting Calcs API MCP Server (HTTP + OAuth) on port {port}...")
+    else:
+        server = mcp
+        logger.info(f"Starting Calcs API MCP Server (HTTP, no auth) on port {port}...")
+
+    server.run(transport="streamable-http", host="0.0.0.0", port=port)
 
 
 def run_sse():
-    """SSE transport — backward compatibility."""
-    logger.info("Starting Calcs API MCP Server (SSE Transport)...")
-    mcp.run(transport="sse", host="localhost", port=8001)
+    """SSE transport — backward compatibility.
+
+    Same OAuth behavior as HTTP: enabled if Google credentials are set.
+    """
+    from .auth import get_auth_provider
+
+    port = int(os.getenv("MCP_SSE_PORT", "8001"))
+    base_url = os.getenv("MCP_BASE_URL", f"http://localhost:{port}")
+    auth = get_auth_provider(base_url=base_url)
+
+    if auth:
+        server = _create_server(auth=auth)
+        logger.info(f"Starting Calcs API MCP Server (SSE + OAuth) on port {port}...")
+    else:
+        server = mcp
+        logger.info(f"Starting Calcs API MCP Server (SSE, no auth) on port {port}...")
+
+    server.run(transport="sse", host="0.0.0.0", port=port)
 
 
 def run_stdio():
-    """stdio transport — for Claude Code and Claude Desktop."""
+    """stdio transport — for Claude Code and Claude Desktop.
+
+    No user-level auth needed; the process inherits the caller's
+    environment (including CALCS_API_TOKEN).
+    """
     logger.info("Starting Calcs API MCP Server (stdio Transport)...")
     mcp.run(transport="stdio")
 
