@@ -88,7 +88,7 @@ def run_http():
     """
     from .auth import get_auth_provider
 
-    port = int(os.getenv("MCP_HTTP_PORT", "8002"))
+    port = int(os.getenv("PORT", os.getenv("MCP_HTTP_PORT", "8080")))
     base_url = os.getenv("MCP_BASE_URL", f"http://localhost:{port}")
     auth = get_auth_provider(base_url=base_url)
 
@@ -109,7 +109,7 @@ def run_sse():
     """
     from .auth import get_auth_provider
 
-    port = int(os.getenv("MCP_SSE_PORT", "8001"))
+    port = int(os.getenv("PORT", os.getenv("MCP_SSE_PORT", "8001")))
     base_url = os.getenv("MCP_BASE_URL", f"http://localhost:{port}")
     auth = get_auth_provider(base_url=base_url)
 
