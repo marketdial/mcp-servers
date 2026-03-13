@@ -37,17 +37,30 @@ logger = logging.getLogger("calcs-api")
 
 @lifespan
 async def app_lifespan(server):
-    """Initialize and clean up the shared API client."""
-    token = os.getenv("CALCS_API_TOKEN")
-    if not token:
-        logger.error("CALCS_API_TOKEN environment variable is required")
-        sys.exit(1)
+    """Initialize and clean up the shared API client.
 
+    Supports two auth modes:
+    1. AUTH0_PASSWORD — fetches a bearer token from Auth0 (auto-refreshes)
+    2. CALCS_API_TOKEN — uses a static bearer token (fallback)
+    """
     base_url = os.getenv("CALCS_API_BASE_URL", "https://staging-app.marketdial.dev/calcs")
     default_client = os.getenv("CALCS_DEFAULT_CLIENT", "")
+    auth0_password = os.getenv("AUTH0_PASSWORD")
+    token = os.getenv("CALCS_API_TOKEN")
 
-    client = CalcsApiClient(base_url=base_url, token=token, default_client=default_client)
-    logger.info(f"API client initialized — base_url={base_url}")
+    if not auth0_password and not token:
+        logger.error("Either AUTH0_PASSWORD or CALCS_API_TOKEN must be set")
+        sys.exit(1)
+
+    client = await CalcsApiClient.create(
+        base_url=base_url,
+        default_client=default_client,
+        token=token,
+        auth0_password=auth0_password,
+    )
+
+    auth_mode = "Auth0 password grant" if auth0_password else "static token"
+    logger.info(f"API client initialized — base_url={base_url}, auth={auth_mode}")
     if default_client:
         logger.info(f"Default client: {default_client}")
 

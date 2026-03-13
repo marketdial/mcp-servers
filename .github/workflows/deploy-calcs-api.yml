@@ -63,8 +63,9 @@ jobs:
             --min-instances=0
             --max-instances=3
             --allow-unauthenticated
+            --service-account=staging-calcs-api-mcp-server@staging-mcp-490021.iam.gserviceaccount.com
           secrets: |
-            CALCS_API_TOKEN=calcs-api-token:latest
+            AUTH0_PASSWORD=auth0-password:latest
             GOOGLE_CLIENT_ID=google-oauth-client-id:latest
             GOOGLE_CLIENT_SECRET=google-oauth-client-secret:latest
 

@@ -30,16 +30,33 @@ uv run calcs-api-sse      # SSE transport on port 8001 (legacy)
 
 The server uses **two separate layers** of authentication:
 
-### Layer 1: Calcs API Token (Required)
+### Layer 1: Calcs API Authentication (Required)
 
-Every transport mode needs a bearer token to authenticate with the upstream Calcs API. This token is passed as an `Authorization: Bearer <token>` header on all API requests.
+Every transport mode needs a bearer token to authenticate with the upstream Calcs API. Two modes are supported:
+
+#### Option A: Auth0 Password Grant (Recommended for Deployments)
+
+The server fetches a bearer token from Auth0 at startup and **auto-refreshes** it before expiry. This is the preferred mode for Cloud Run and other deployed environments.
+
+```env
+# .env
+AUTH0_PASSWORD=your_auth0_password_here
+```
+
+The server uses a shared service account (`aqaadmin@marketdial.com`) to obtain tokens. The password is the only secret you need to store.
+
+#### Option B: Static Bearer Token (Local Development)
+
+For quick local development, you can provide a pre-obtained bearer token directly:
 
 ```env
 # .env
 CALCS_API_TOKEN=your_bearer_token_here
 ```
 
-**How to get a token:** Obtain a Calcs API bearer token from your MarketDial / Calcs API administrator. This is a service-level credential — it authenticates the MCP server itself to the Calcs API backend.
+**Note:** Static tokens expire periodically and must be manually refreshed. Use Auth0 password grant for long-running deployments.
+
+If both `AUTH0_PASSWORD` and `CALCS_API_TOKEN` are set, Auth0 takes precedence.
 
 ### Layer 2: Client Authentication (Transport-Dependent)
 
