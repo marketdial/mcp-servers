@@ -7,10 +7,13 @@ WORKDIR /app
 
 # Install dependencies first (cacheable layer)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application code
 COPY calcs_api/ calcs_api/
+
+# Now install the project itself (needs source present)
+RUN uv sync --frozen --no-dev
 
 # Cloud Run injects PORT env var; default to 8080
 ENV PORT=8080
