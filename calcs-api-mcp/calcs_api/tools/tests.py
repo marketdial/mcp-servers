@@ -58,7 +58,8 @@ async def get_tests(
 
     # Default: return compact sorted list
     effective_limit = limit if limit > 0 else 9999
-    summary = summarize_tests_list(data, sort_by=sort_by, limit=effective_limit, status_filter=status)
+    effective_status = status if isinstance(status, str) else None
+    summary = summarize_tests_list(data, sort_by=sort_by, limit=effective_limit, status_filter=effective_status)
     return json.dumps({"status": "success", **summary}, indent=2)
 
 
@@ -85,11 +86,13 @@ async def get_recent_tests(
     if response["status"] == "error":
         return json.dumps(response, indent=2)
 
+    # MCP clients may send None even when default is "COMPLETE"
+    effective_status = status if isinstance(status, str) else "COMPLETE"
     summary = summarize_tests_list(
         response["data"],
         sort_by="calcs_ended",
         limit=count,
-        status_filter=status,
+        status_filter=effective_status,
     )
     return json.dumps({"status": "success", **summary}, indent=2)
 

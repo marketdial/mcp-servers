@@ -164,7 +164,7 @@ def summarize_tests_list(
         return {"tests": [], "total": 0, "returned": 0}
 
     # Filter by status
-    if status_filter:
+    if status_filter and isinstance(status_filter, str):
         normalized = status_filter.upper()
         tests = [t for t in tests if (t.get("calcs_status") or "").upper() == normalized]
 
