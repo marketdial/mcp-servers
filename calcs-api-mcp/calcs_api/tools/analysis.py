@@ -123,7 +123,7 @@ async def get_analysis_results(
 
     # Differentiate "not found" from "never run"
     if isinstance(data, dict) and data.get("status") == "not_found":
-        msg = data.get("message", "")
+        msg = data.get("message") or ""
         if "run the analysis first" in msg.lower():
             return json.dumps({
                 "status": "no_results",
