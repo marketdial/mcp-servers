@@ -6,10 +6,60 @@ stdio transport (Claude Code) continues using CALCS_API_TOKEN env var.
 OAuth only applies when serving over HTTP/SSE to remote clients.
 """
 
+import hashlib
 import logging
 import os
+from collections.abc import Mapping, Sequence
+from typing import Any, SupportsFloat
 
 logger = logging.getLogger("calcs-api.auth")
+
+
+class _SafeKeyFirestoreStore:
+    """Wrapper around FirestoreStore that sanitizes keys for Firestore compatibility.
+
+    MCP client IDs like 'https://claude.ai/oauth/mcp-oauth-client-metadata'
+    contain forward slashes, which Firestore interprets as collection/document
+    path separators. This wrapper hashes such keys into safe document IDs
+    while preserving the AsyncKeyValue protocol.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+
+    @staticmethod
+    def _safe_key(key: str) -> str:
+        """Convert a key with special characters into a Firestore-safe document ID."""
+        if "/" in key or len(key) > 200:
+            # Use SHA-256 hash prefix + sanitized suffix for readability
+            h = hashlib.sha256(key.encode()).hexdigest()[:16]
+            safe = key.replace("/", "_").replace(":", "_")[:60]
+            return f"{safe}__{h}"
+        return key
+
+    async def get(self, key: str, *, collection: str | None = None) -> dict[str, Any] | None:
+        return await self._inner.get(self._safe_key(key), collection=collection)
+
+    async def get_many(self, keys: Sequence[str], *, collection: str | None = None) -> list[dict[str, Any] | None]:
+        return await self._inner.get_many([self._safe_key(k) for k in keys], collection=collection)
+
+    async def put(self, key: str, value: Mapping[str, Any], *, collection: str | None = None, ttl: SupportsFloat | None = None) -> None:
+        return await self._inner.put(self._safe_key(key), value, collection=collection, ttl=ttl)
+
+    async def put_many(self, keys: Sequence[str], values: Sequence[Mapping[str, Any]], *, collection: str | None = None, ttl: SupportsFloat | None = None) -> None:
+        return await self._inner.put_many([self._safe_key(k) for k in keys], values, collection=collection, ttl=ttl)
+
+    async def delete(self, key: str, *, collection: str | None = None) -> bool:
+        return await self._inner.delete(self._safe_key(key), collection=collection)
+
+    async def delete_many(self, keys: Sequence[str], *, collection: str | None = None) -> int:
+        return await self._inner.delete_many([self._safe_key(k) for k in keys], collection=collection)
+
+    async def ttl(self, key: str, *, collection: str | None = None) -> tuple[dict[str, Any] | None, float | None]:
+        return await self._inner.ttl(self._safe_key(key), collection=collection)
+
+    async def ttl_many(self, keys: Sequence[str], *, collection: str | None = None) -> list[tuple[dict[str, Any] | None, float | None]]:
+        return await self._inner.ttl_many([self._safe_key(k) for k in keys], collection=collection)
 
 
 def _get_firestore_storage():
@@ -33,8 +83,10 @@ def _get_firestore_storage():
             project=project,
             default_collection="mcp-oauth-state",
         )
+        # Wrap with key sanitizer to handle slashes in MCP client IDs
+        safe_store = _SafeKeyFirestoreStore(store)
         logger.info("Using Firestore for OAuth state persistence")
-        return store
+        return safe_store
     except ImportError:
         logger.info("Firestore not available — using default file storage")
         return None
