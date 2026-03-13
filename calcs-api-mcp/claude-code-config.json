@@ -1,9 +1,11 @@
 {
   "mcpServers": {
     "calcs-api": {
-      "transport": {
-        "type": "sse",
-        "url": "http://localhost:8001/messages"
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/calcs-api-mcp", "calcs-api"],
+      "env": {
+        "CALCS_API_TOKEN": "your_token_here",
+        "CALCS_DEFAULT_CLIENT": "your_client_name"
       }
     }
   }
