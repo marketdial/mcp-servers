@@ -12,6 +12,37 @@ import os
 logger = logging.getLogger("calcs-api.auth")
 
 
+def _get_firestore_storage():
+    """Create a Firestore-backed storage for OAuth state persistence.
+
+    On Cloud Run, the default file-based storage is ephemeral (lost on
+    instance restart/deploy), causing "Client Not Registered" errors for
+    returning users. Firestore provides durable storage that survives
+    instance lifecycle events.
+
+    Uses Application Default Credentials, which on Cloud Run maps to the
+    runtime service account. Requires the Datastore User role.
+
+    Returns None if Firestore is not available (falls back to file storage).
+    """
+    try:
+        from key_value.aio.stores.firestore import FirestoreStore
+
+        project = os.getenv("GCP_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT")
+        store = FirestoreStore(
+            project=project,
+            default_collection="mcp-oauth-state",
+        )
+        logger.info("Using Firestore for OAuth state persistence")
+        return store
+    except ImportError:
+        logger.info("Firestore not available — using default file storage")
+        return None
+    except Exception as e:
+        logger.warning(f"Failed to create Firestore store: {e} — using default file storage")
+        return None
+
+
 def get_auth_provider(base_url: str = "http://localhost:8002"):
     """Create a Google OAuth provider if credentials are configured.
 
@@ -47,6 +78,9 @@ def get_auth_provider(base_url: str = "http://localhost:8002"):
 
     public_base = os.getenv("MCP_BASE_URL", base_url)
 
+    # Use Firestore for persistent OAuth state on Cloud Run
+    client_storage = _get_firestore_storage()
+
     try:
         provider = GoogleProvider(
             client_id=client_id,
@@ -56,6 +90,7 @@ def get_auth_provider(base_url: str = "http://localhost:8002"):
                 "openid",
                 "https://www.googleapis.com/auth/userinfo.email",
             ],
+            client_storage=client_storage,
         )
         logger.info(f"Google OAuth configured — base_url={public_base}")
 

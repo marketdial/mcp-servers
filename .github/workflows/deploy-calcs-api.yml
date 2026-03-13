@@ -66,6 +66,7 @@ jobs:
             --service-account=staging-calcs-api-mcp-server@staging-mcp-490021.iam.gserviceaccount.com
           env_vars: |
             MCP_BASE_URL=https://calcs-api-mcp-wtzr5w5khq-uc.a.run.app
+            GOOGLE_CLOUD_PROJECT=staging-mcp-490021
           secrets: |
             AUTH0_PASSWORD=auth0-password:latest
             GOOGLE_CLIENT_ID=google-oauth-client-id:latest
